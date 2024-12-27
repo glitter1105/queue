@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>叫号显示屏</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <!-- Bootstrap CSS -->
+    <link href="/asset/bootstrap/5.3.0/bootstrap.min.css" rel="stylesheet">
+
+    <style>
+        :root {
+            --bs-primary: #0d6efd;
+            --bs-secondary: #6c757d;
+            --bs-success: #198754;
+            --bs-warning: #ffc107;
+            --bs-danger: #dc3545;
+        }
+
+        body {
+            background: #f8f9fa;
+            min-height: 100vh;
+        }
+
+        .display-container {
+            max-width: 1800px;
+            margin: 2rem auto;
+        }
+
+        .number-item {
+            transition: all 0.3s ease;
+            margin: 1rem 0;
+        }
+
+        .number-item.current {
+            background: var(--bs-primary) !important;
+            color: #fff;
+            font-size: 2rem;
+            animation: highlight 2s infinite;
+        }
+
+        .number-item.waiting {
+            background: var(--bs-secondary) !important;
+            color: #fff;
+        }
+
+        .number-item.passed {
+            background: var(--bs-warning) !important;
+        }
+
+        .window-badge {
+            font-size: 1.2rem;
+            background: rgba(0, 0, 0, 0.2);
+        }
+
+        .scroll-container {
+            height: calc(100vh - 250px);
+            overflow-y: auto;
+        }
+
+        @keyframes highlight {
+            0% {
+                transform: scale(1);
+            }
+            50% {
+                transform: scale(1.05);
+            }
+            100% {
+                transform: scale(1);
+            }
+        }
+    </style>
+</head>
+<body>
+<div class="container-fluid display-container">
+    <div class="row g-4">
+        <!-- 正在叫号 -->
+        <div class="col-md-4">
+            <div class="card h-100 shadow-sm">
+                <h3 class="card-header text-center bg-primary text-white">正在叫号</h3>
+                <div class="card-body scroll-container">
+                    <?php foreach($current as $item): ?>
+                    <div class="number-item current card p-4 text-center">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <span class="fs-3"><?= $item->number ?>号</span>
+                            <span class="fs-3"><?= hideNameCharacters($item->name) ?></span>
+                            <span class="badge window-badge"><?= $item->window->name ?></span>
+                        </div>
+                    </div>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+        </div>
+
+        <!-- 等待叫号 -->
+        <div class="col-md-4">
+            <div class="card h-100 shadow-sm">
+                <h3 class="card-header text-center bg-secondary text-white">等待叫号</h3>
+                <div class="card-body scroll-container">
+                    <?php foreach($waiting as $item): ?>
+                    <div class="number-item waiting card p-3">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <span class="fs-3"><?= $item->number ?>号</span>
+                            <span class="fs-3"><?= hideNameCharacters($item->name) ?></span>
+                        </div>
+                    </div>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+        </div>
+
+        <!-- 扫码取号和过号人员 -->
+        <div class="col-md-4">
+            <div class="card h-100 shadow-sm">
+                <h3 class="card-header text-center bg-info text-white">扫码取号</h3>
+                <div class="card-body text-center">
+                    <div>
+                        <img src="/queue/qrcode?url=<?= urlencode(filter_var(config('app.app_url'), FILTER_VALIDATE_URL) . '/queue/take') ?>"
+                             alt="取号二维码"
+                             class="img-fluid p-3 bg-white rounded shadow-sm"
+                             style="max-width: 250px">
+                    </div>
+
+
+                    <h3 class="card-header text-center bg-warning">过号人员</h3>
+                    <div class="card-body scroll-container">
+                        <?php foreach($passed as $item): ?>
+                        <div class="number-item passed card p-3">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <span class="fs-3"><?= $item->number ?>号</span>
+                                <span class="fs-3"><?= hideNameCharacters($item->name) ?></span>
+                            </div>
+                        </div>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<!-- Scripts -->
+<script src="/asset/js/jquery/3.7.0/jquery.min.js"></script>
+<script src="/asset/bootstrap/5.3.0/bootstrap.bundle.min.js"></script>
+<script>
+    $(document).ready(function () {
+        // WebSocket连接
+        // 建立WebSocket连接
+        const ws = new WebSocket('ws://127.0.0.1:7272');
+
+        ws.onopen = function () {
+            console.log('WebSocket连接已建立');
+            // 绑定显示屏
+            ws.send(JSON.stringify({
+                type: 'bind_display'
+            }));
+        };
+
+        ws.onmessage = function (e) {
+            const data = JSON.parse(e.data);
+            console.log('收到消息:', data);
+
+            switch (data.type) {
+                case 'call_number':
+                    //playNotice();
+                    updateNumberStatus(data.data);
+                    break;
+                case 'status_change':
+                    updateNumberStatus(data.data);
+                    break;
+            }
+        };
+
+        ws.onerror = function (e) {
+            console.error('WebSocket错误:', e);
+        };
+
+        ws.onclose = function () {
+            console.log('WebSocket连接已关闭');
+            // 可以在这里添加重连逻辑
+            setTimeout(function () {
+                location.reload();
+            }, 5000);
+        };
+
+
+        // 播放提示音
+        function playNotice() {
+            new Audio('/static/audio/notice.mp3').play();
+        }
+
+        // 更新号码状态
+        function updateNumberStatus(data) {
+            const $currentContainer = $('.col-md-4:first-child .scroll-container');
+            const $waitingContainer = $('.col-md-4:nth-child(2) .scroll-container');
+            const $passedContainer = $('.col-md-4:last-child .scroll-container');
+
+            // 查找包含指定号码的元素
+            const $targetItem = $('.number-item').filter(function () {
+                return $(this).find('span:first').text().includes(data.number + '号');
+            });
+
+
+            switch (data.status) {
+                case 0:
+                    if ($targetItem.length) {
+                        $targetItem.fadeOut(300, function () {
+                            $(this).remove();
+                        });
+                    }
+                    //获取待叫号列表的长度
+                    if ($waitingContainer.children().length < 10) {
+                        const $waitingElement = $('<div>')
+                            .addClass('number-item waiting card p-3')
+                            .html(`
+                            <div class="d-flex justify-content-between align-items-center">
+                                <span class="fs-3">${data.number}号</span>
+                                <span class="fs-3">${data.name}</span>
+                            </div>
+                        `);
+                        // 添加到等待列表底部
+                        $waitingContainer.append($waitingElement);
+                    }
+                    break
+                case 1:
+                    if ($targetItem.length) {
+                        $targetItem.fadeOut(300, function () {
+                            $(this).remove();
+                        });
+                    }
+                    break;
+                case 2:
+                    // 创建过号元素（保留号码和姓名信息）
+                    const number = $targetItem.find('span:first').text();
+                    const name = $targetItem.find('span:nth-child(2)').text();
+
+                    const $passedElement = $('<div>')
+                        .addClass('number-item passed card p-3')
+                        .html(`
+                            <div class="d-flex justify-content-between align-items-center">
+                                <span class="fs-3">${number}</span>
+                                <span class="fs-3">${name}</span>
+                            </div>
+                        `);
+
+                    // 添加到过号列表顶部
+                    $passedContainer.prepend($passedElement);
+
+                    // 移除原元素
+                    if ($targetItem.length) {
+                        $targetItem.fadeOut(300, function () {
+                            $(this).remove();
+                        });
+                    }
+                    break;
+                case 3:
+                    if ($targetItem.length) {
+                        $targetItem.fadeOut(300, function () {
+                            $(this).remove();
+                        });
+                    }
+                    break;
+                case 4:
+                    // 更新窗口信息
+                    if ($targetItem.length) {
+                        $targetItem.fadeOut(300, function () {
+                            $(this).remove();
+                        });
+                    }
+                    //更新当前正在叫号的信息
+                    const $currentElement = $('<div>')
+                        .addClass('number-item current card p-4 text-center')
+                        .html(`
+                            <div class="d-flex justify-content-between align-items-center">
+                                <span class="fs-3">${data.number}号</span>
+                                <span class="fs-3">${data.name}</span>
+                                <span class="badge window-badge">${data.window_name}</span>
+                            </div>
+                        `);
+                    // 添加到正在叫号列表顶部
+                    $currentContainer.prepend($currentElement);
+                    break;
+            }
+        }
+
+        // 动画效果
+        $('.number-item').on('animationend', function (e) {
+            if (e.originalEvent.animationName === 'highlight') {
+                $(this).css('animation', 'none')
+                    .delay(10)
+                    .queue(function () {
+                        $(this).css('animation', '').dequeue();
+                    });
+            }
+        });
+    });
+</script>
+</body>
+</html>

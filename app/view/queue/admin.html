@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>叫号管理系统</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <!-- Bootstrap CSS -->
+    <link href="/asset/bootstrap/5.3.0/bootstrap.min.css" rel="stylesheet">
+    <!-- Toastr CSS -->
+    <link href="/asset/toastr/2.1.3/toastr.min.css" rel="stylesheet">
+    <style>
+        body {
+            background: #f8f9fa;
+        }
+
+        .waiting-item {
+            transition: all 0.3s ease;
+        }
+
+        .waiting-item:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 .5rem 1rem rgba(0, 0, 0, .15) !important;
+        }
+
+        .high-priority {
+            border-left: 4px solid var(--bs-warning);
+        }
+
+        .actions {
+            white-space: nowrap;
+        }
+
+        #toast-container .toast-success .toast-message {
+            padding-left: 30px; /* 调整提示信息左侧的 padding 来给对号留出空间 */
+            white-space: pre-line; /* 如果需要，保持换行*/
+        }
+
+        #toast-container .toast-success .toast-close-button {
+            margin-top: -2px; /*微调关闭按钮的位置*/
+        }
+
+
+        #toast-container .toast-error .toast-message {
+            padding-left: 30px; /* 调整提示信息左侧的 padding 来给对号留出空间 */
+            white-space: pre-line; /* 如果需要，保持换行*/
+        }
+
+        #toast-container .toast-error .toast-close-button {
+            margin-top: -2px; /*微调关闭按钮的位置*/
+        }
+
+
+        #toast-container .toast-info .toast-message {
+            padding-left: 30px; /* 调整提示信息左侧的 padding 来给对号留出空间 */
+            white-space: pre-line; /* 如果需要，保持换行*/
+        }
+
+        #toast-container .toast-info .toast-close-button {
+            margin-top: -2px; /*微调关闭按钮的位置*/
+        }
+
+
+        #toast-container .toast-warning .toast-message {
+            padding-left: 30px; /* 调整提示信息左侧的 padding 来给对号留出空间 */
+            white-space: pre-line; /* 如果需要，保持换行*/
+        }
+
+        #toast-container .toast-warning .toast-close-button {
+            margin-top: -2px; /*微调关闭按钮的位置*/
+        }
+
+
+        #toast-container > div {
+            opacity: 1 !important;
+            border-radius: 8px !important;
+            padding: 15px 20px !important;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
+        }
+
+        /* 优化按钮组样式 */
+        .btn-group .btn {
+            margin-right: 0.5rem;
+        }
+
+        .btn-group .btn:last-child {
+            margin-right: 0;
+        }
+
+        /* 分页样式优化 */
+        .pagination {
+            margin-bottom: 0;
+        }
+
+        .page-link {
+            padding: 0.5rem 0.75rem;
+            margin: 0 2px;
+            border-radius: 4px;
+        }
+
+        .page-item.active .page-link {
+            background-color: var(--bs-primary);
+            border-color: var(--bs-primary);
+        }
+    </style>
+</head>
+<body>
+<div class="container py-4">
+    <!-- 头部 -->
+    <div class="card mb-4 shadow-sm">
+        <div class="card-body d-flex justify-content-between align-items-center">
+            <h2 class="card-title mb-0">叫号管理系统</h2>
+            <div>
+                <a href="/queue/take?renumbering=1" target="_blank" class="btn btn-primary me-2">
+                    <i class="bi bi-plus-circle"></i> 取号页面
+                </a>
+                <a href="/queue/display" target="_blank" class="btn btn-info">
+                    <i class="bi bi-display"></i> 显示大屏
+                </a>
+            </div>
+        </div>
+    </div>
+    <!-- 筛选和设置面板 -->
+    <div class="card mb-4 shadow-sm">
+        <div class="card-body">
+            <form method="get" class="row g-3 align-items-center" id="filterForm">
+                <div class="col-auto">
+                    <select name="window" class="form-select" onchange="this.form.submit()">
+                        <option value="">所有窗口</option>
+                        <?php foreach($windows as $window): ?>
+                        <option value="<?= $window->id ?>"
+                        <?= $currentWindow == $window->id ? 'selected' : '' ?>>
+                        <?= $window->name ?>
+                        </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="col-auto">
+                    <select name="per_page" class="form-select" onchange="this.form.submit()">
+                        <option value="10"
+                        <?= $perPage == 10 ? 'selected' : '' ?>>每页10条</option>
+                        <option value="20"
+                        <?= $perPage == 20 ? 'selected' : '' ?>>每页20条</option>
+                        <option value="50"
+                        <?= $perPage == 50 ? 'selected' : '' ?>>每页50条</option>
+                    </select>
+                </div>
+            </form>
+        </div>
+    </div>
+    <!-- 手动叫号面板 -->
+    <div class="card mb-4 shadow-sm">
+        <div class="card-header">
+            <h5 class="mb-0">手动叫号</h5>
+        </div>
+        <div class="card-body">
+            <div class="row g-3 align-items-center">
+                <div class="col-auto">
+                    <input type="text" id="numberInput" class="form-control" placeholder="输入号码或者手机号">
+                </div>
+                <div class="col-auto">
+                    <select id="windowNumber" class="form-select">
+                        <?php foreach($windows as $window): ?>
+                        <option value="<?= $window->id ?>"><?= $window->name ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="col-auto">
+                    <button class="btn btn-primary" onclick="Queue.callNumber()">
+                        <i class="bi bi-megaphone"></i> 叫号
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- 等待队列 -->
+    <div class="card shadow-sm">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">等待队列</h5>
+            <span class="badge bg-primary">共 <?= $waiting->total() ?> 条记录</span>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead>
+                    <tr>
+                        <th>号码</th>
+                        <th>姓名</th>
+                        <th>手机号</th>
+                        <th>状态</th>
+                        <th>叫号次数</th>
+                        <th>窗口</th>
+                        <th>操作</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    <?php foreach($waiting as $item): ?>
+                    <tr class="waiting-item <?= $item->call_count >= 2 ? 'high-priority' : '' ?>">
+                        <td><?= $item->number ?></td>
+                        <td><?= $item->name ?></td>
+                        <td><?= $item->mobile ?></td>
+                        <td>
+                           <span class="badge bg-<?php
+                           if($item->status == \app\model\QueueNumber::STATUS_PASSED) {
+                               echo 'warning';
+                           } elseif($item->status == \app\model\QueueNumber::STATUS_CALLING) {
+                               echo 'primary';
+                           } else {
+                               echo 'info';
+                           }
+                           ?>">
+                               <?= $item->getStatusText() ?>
+                           </span>
+                        </td>
+                        <td>
+                            <span class="badge bg-secondary"><?= $item->call_count ?>次</span>
+                        </td>
+                        <td>
+                            <select class="form-select form-select-sm window-select" style="width: 100px">
+                                <?php foreach($windows as $window): ?>
+                                <option value="<?= $window->id ?>"
+                                <?= $item->window_id == $window->id ? 'selected' : '' ?>>
+                                <?= $window->name ?>
+                                </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </td>
+                        <td class="actions">
+                            <div class="btn-group btn-group-sm">
+                                <?php if($item->status == \app\model\QueueNumber::STATUS_WAITING || $item->status ==
+                                \app\model\QueueNumber::STATUS_CALLING): ?>
+                                <button class="btn btn-primary me-2"
+                                        onclick="Queue.callNumber('<?= $item->number ?>', this)">
+                                    <?php if($item->status == \app\model\QueueNumber::STATUS_WAITING): ?>
+                                    叫号
+                                    <?php endif; ?>
+                                    <?php if($item->status == \app\model\QueueNumber::STATUS_CALLING): ?>
+                                    继续叫号
+                                    <?php endif; ?>
+                                </button>
+                                <button class="btn btn-success me-2"
+                                        onclick="Queue.completeNumber('<?= $item->number ?>')">
+                                    完成
+                                </button>
+                                <?php if($item->call_count > 0): ?>
+                                <button class="btn btn-warning me-2" onclick="Queue.passNumber('<?= $item->number ?>')">
+                                    过号
+                                </button>
+                                <?php endif; ?>
+                                <button class="btn btn-danger" onclick="Queue.cancelNumber('<?= $item->number ?>')">
+                                    取消
+                                </button>
+                                <?php endif; ?>
+                                <?php if($item->status == \app\model\QueueNumber::STATUS_PASSED): ?>
+                                <button class="btn btn-info me-2"
+                                        onclick="Queue.callNumber('<?= $item->number ?>', this)">
+                                    重呼
+                                </button>
+                                <button class="btn btn-success me-2"
+                                        onclick="Queue.completeNumber('<?= $item->number ?>')">
+                                    完成
+                                </button>
+                                <button class="btn btn-danger" onclick="Queue.cancelNumber('<?= $item->number ?>')">
+                                    取消
+                                </button>
+                                <?php endif; ?>
+                            </div>
+                        </td>
+                    </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <!-- 分页 -->
+        <div class="card-footer">
+            <nav>
+                <ul class="pagination justify-content-center mb-0">
+                    <?php
+                   $currentPage = $waiting->currentPage();
+                    $lastPage = $waiting->lastPage();
+                    $window = request()->get('window', '');
+                    $perPage = request()->get('per_page', 10);
+
+                    // 计算显示的页码范围
+                    $range = 5;
+                    $start = max($currentPage - floor($range/2), 1);
+                    $end = min($start + $range - 1, $lastPage);
+
+                    if ($end - $start + 1 < $range) {
+                    $start = max($end - $range + 1, 1);
+                    }
+                    ?>
+
+                    <!-- 首页 -->
+                    <?php if($currentPage > 1): ?>
+                    <li class="page-item">
+                        <a class="page-link" href="?page=1&window=<?= $window ?>&per_page=<?= $perPage ?>">首页</a>
+                    </li>
+                    <?php endif; ?>
+
+                    <!-- 上一页 -->
+                    <li class="page-item <?= $currentPage <= 1 ? 'disabled' : '' ?>">
+                        <a class="page-link"
+                           href="?page=<?= $currentPage-1 ?>&window=<?= $window ?>&per_page=<?= $perPage ?>">上一页</a>
+                    </li>
+
+                    <!-- 页码 -->
+                    <?php if($start > 1): ?>
+                    <li class="page-item disabled">
+                        <span class="page-link">...</span>
+                    </li>
+                    <?php endif; ?>
+
+                    <?php for($i = $start; $i <= $end; $i++): ?>
+                    <li class="page-item <?= $currentPage == $i ? 'active' : '' ?>">
+                        <a class="page-link"
+                           href="?page=<?= $i ?>&window=<?= $window ?>&per_page=<?= $perPage ?>"><?= $i ?></a>
+                    </li>
+                    <?php endfor; ?>
+
+                    <?php if($end < $lastPage): ?>
+                    <li class="page-item disabled">
+                        <span class="page-link">...</span>
+                    </li>
+                    <?php endif; ?>
+
+                    <!-- 下一页 -->
+                    <li class="page-item <?= $currentPage >= $lastPage ? 'disabled' : '' ?>">
+                        <a class="page-link"
+                           href="?page=<?= $currentPage+1 ?>&window=<?= $window ?>&per_page=<?= $perPage ?>">下一页</a>
+                    </li>
+
+                    <!-- 末页 -->
+                    <?php if($currentPage < $lastPage): ?>
+                    <li class="page-item">
+                        <a class="page-link"
+                           href="?page=<?= $lastPage ?>&window=<?= $window ?>&per_page=<?= $perPage ?>">末页</a>
+                    </li>
+                    <?php endif; ?>
+                </ul>
+
+                <!-- 页码信息 -->
+                <div class="text-center mt-2">
+                    <small class="text-muted">
+                        共 <?= $waiting->total() ?> 条记录，
+                        当前第 <?= $currentPage ?>/<?= $lastPage ?> 页，
+                        每页 <?= $perPage ?> 条
+                    </small>
+                </div>
+            </nav>
+        </div>
+    </div>
+</div>
+
+<!-- Scripts -->
+<script src="/asset/js/jquery/3.7.0/jquery.min.js"></script>
+<script src="/asset/bootstrap/5.3.0/bootstrap.bundle.min.js"></script>
+<script src="/asset/toastr/2.1.3/toastr.min.js"></script>
+<script>
+    const Queue = {
+        init() {
+            this.initToastr();
+        },
+        initToastr() {
+            toastr.options = {
+                closeButton: true,
+                progressBar: true,
+                positionClass: "toast-top-center",
+                timeOut: 3000,
+                extendedTimeOut: 1000,
+                showEasing: "swing",
+                hideEasing: "linear",
+                showMethod: "fadeIn",
+                hideMethod: "fadeOut"
+            };
+        },
+        callNumber(number = null, buttonElement = null) {
+            const numberToCall = number || $('#numberInput').val();
+            const window = buttonElement ?
+                $(buttonElement).closest('tr').find('.window-select').val() :
+                $('#windowNumber').val();
+            if (!numberToCall) {
+                toastr.error('请输入号码');
+                return;
+            }
+            this.setButtonLoading(buttonElement || $('#submitBtn'), true);
+            $.ajax({
+                url: '/queue/call',
+                type: 'POST',
+                data: JSON.stringify({
+                    number: numberToCall,
+                    window: window
+                }),
+                contentType: 'application/json',
+                success: (response) => {
+                    if (response.code === 0) {
+                        toastr.success('叫号成功');
+                    } else {
+                        toastr.error(response.msg || '操作失败');
+                    }
+                },
+                error: () => {
+                    toastr.error('网络错误，请重试');
+                },
+                complete: () => {
+                    this.setButtonLoading(buttonElement || $('#submitBtn'), false);
+                }
+            });
+        },
+        completeNumber(number) {
+            if (!confirm('确认完成处理该号码？')) return;
+            $.ajax({
+                url: '/queue/complete',
+                type: 'POST',
+                data: JSON.stringify({number}),
+                contentType: 'application/json',
+                success: (response) => {
+                    if (response.code === 0) {
+                        //移除对应的行
+                        $(`tr:contains(${number})`).remove();
+                        toastr.success('处理完成');
+                    } else {
+                        toastr.error(response.msg || '操作失败');
+                    }
+                },
+                error: () => {
+                    toastr.error('网络错误，请重试');
+                }
+            });
+        },
+        passNumber(number) {
+            if (!confirm('确认将该号码标记为过号？')) return;
+            $.ajax({
+                url: '/queue/pass',
+                type: 'POST',
+                data: JSON.stringify({number}),
+                contentType: 'application/json',
+                success: (response) => {
+                    if (response.code === 0) {
+                        toastr.success('已标记为过号');
+                    } else {
+                        toastr.error(response.msg || '操作失败');
+                    }
+                },
+                error: () => {
+                    toastr.error('网络错误，请重试');
+                }
+            });
+        },
+        cancelNumber(number) {
+            if (!confirm('确认取消该号码？')) return;
+            $.ajax({
+                url: '/queue/cancel',
+                type: 'POST',
+                data: JSON.stringify({number}),
+                contentType: 'application/json',
+                success: (response) => {
+                    if (response.code === 0) {
+                        //移除对应的行
+                        $(`tr:contains(${number})`).remove();
+                        toastr.success('已取消');
+                    } else {
+                        toastr.error(response.msg || '操作失败');
+                    }
+                },
+                error: () => {
+                    toastr.error('网络错误，请重试');
+                }
+            });
+        },
+        setButtonLoading(button, isLoading) {
+            const $btn = $(button);
+            const originalText = $btn.data('original-text') || $btn.text();
+            if (isLoading) {
+                $btn.data('original-text', originalText)
+                    .prop('disabled', true)
+                    .html(`<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>处理中...`);
+            } else {
+                $btn.prop('disabled', false)
+                    .text(originalText);
+            }
+        }
+    };
+
+
+    $(document).ready(
+        function () {
+            Queue.init();
+            // WebSocket 连接
+            // 建立WebSocket连接
+            const ws = new WebSocket('ws://127.0.0.1:7272');
+
+            ws.onopen = function () {
+                console.log('WebSocket连接已建立');
+                // 绑定显示屏
+                ws.send(JSON.stringify({
+                    type: 'bind_window'
+                }));
+            };
+
+            ws.onmessage = function (e) {
+                const data = JSON.parse(e.data);
+                console.log('收到消息:', data);
+                switch (data.type) {
+                    case 'call_number':
+                        updateNumberStatus(data.data);
+                        break;
+                    case 'status_change':
+                        updateNumberStatus(data.data);
+                        break;
+                }
+            };
+
+            ws.onerror = function (e) {
+                console.error('WebSocket错误:', e);
+            };
+
+            ws.onclose = function () {
+                console.log('WebSocket连接已关闭');
+                // 可以在这里添加重连逻辑
+                setTimeout(function () {
+                    location.reload();
+                }, 5000);
+            };
+
+            function updateNumberStatus(data) {
+                const $targetItem = $(`tr:contains(${data.number})`);
+                switch (data.status) {
+                    case 0: // 等待中
+                        if ($targetItem.length) {
+                            $targetItem.fadeOut(300, function () {
+                                $(this).remove();
+                            });
+                        }
+                        // 添加新的等待队列
+                        //获取当前页码是否为最后一页
+                        const currentPage = <?= $waiting->currentPage() ?>;
+                        const lastPage = <?= $waiting->lastPage() ?>;
+                        const perPage = <?= $perPage ?>;
+                        const total = <?= $waiting->total() ?>;
+                        // 当前页为最后一页且已满，不添加新的等待队列
+                        if (currentPage === lastPage && total % perPage === 0  && total >= perPage) {
+                            console.log('当前页为最后一页且已满，不添加新的等待队列');
+                            return;
+                        }
+                        // 添加新的等待队列
+                        const $table = $('.table tbody');
+                        const $newItem = $(`
+        <tr class="waiting-item">
+            <td>${data.number}</td>
+            <td>${data.name}</td>
+            <td>${data.mobile}</td>
+            <td>
+                <span class="badge bg-info">待叫号</span>
+            </td>
+            <td>
+                <span class="badge bg-secondary">0次</span>
+            </td>
+            <td>
+                <select class="form-select form-select-sm window-select" style="width: 100px">
+                    <?php foreach($windows as $window): ?>
+                    <option value="<?= $window->id ?>"><?= $window->name ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </td>
+            <td class="actions">
+                <div class="btn-group btn-group-sm">
+                    <button class="btn btn-primary me-2" onclick="Queue.callNumber('${data.number}', this)">
+                        叫号
+                    </button>
+                    <button class="btn btn-success me-2" onclick="Queue.completeNumber('${data.number}')">
+                        完成
+                    </button>
+                    <button class="btn btn-danger" onclick="Queue.cancelNumber('${data.number}')">
+                        取消
+                    </button>
+                </div>
+            </td>
+        </tr>
+    `);
+                        $table.append($newItem);
+                        break;
+                    case 1:  //1已取消
+                        if ($targetItem.length) {
+                            $targetItem.fadeOut(300, function () {
+                                $(this).remove();
+                            });
+                        }
+                        break;
+                    case 2: // 过号
+                        // 更新当前的targetItem显示的状态、文字、样式等
+                        if ($targetItem.length) {
+                            if ($targetItem.length) {
+                                // 更新状态标识为过号
+                                $targetItem.find('td:eq(3)').html('<span class="badge bg-warning">已过号</span>');
+                                // 更新叫号次数
+                                $targetItem.find('td:eq(4)').html(`<span class="badge bg-secondary">${data.call_count}次</span>`);
+                                // 更新按钮组
+                                $targetItem.find('.btn-group').html(`
+            <button class="btn btn-info me-2" onclick="Queue.callNumber('${data.number}', this)">
+                重呼
+            </button>
+            <button class="btn btn-success me-2" onclick="Queue.completeNumber('${data.number}')">
+                完成
+            </button>
+            <button class="btn btn-danger" onclick="Queue.cancelNumber('${data.number}')">
+                取消
+            </button>
+        `);
+                                // 添加高亮样式
+                                if (data.call_count >= 2) {
+                                    $targetItem.addClass('high-priority');
+                                }
+                            }
+                            break;
+                        }
+                        break;
+                    case 3: //已完成
+                        if ($targetItem.length) {
+                            $targetItem.fadeOut(300, function () {
+                                $(this).remove();
+                            });
+                        }
+                        break;
+                    case 4: // 叫号中
+                        // 更新窗口信息
+                        if ($targetItem.length) {
+                            // 更新状态标识为叫号中
+                            $targetItem.find('td:eq(3)').html('<span class="badge bg-primary">叫号中</span>');
+                            // 更新叫号次数
+                            $targetItem.find('td:eq(4)').html(`<span class="badge bg-secondary">${data.call_count}次</span>`);
+                            // 更新窗口选择
+                            $targetItem.find('.window-select').val(data.window_id);
+                            // 更新按钮组
+                            $targetItem.find('.btn-group').html(`
+            <button class="btn btn-primary me-2" onclick="Queue.callNumber('${data.number}', this)">
+                继续叫号
+            </button>
+            <button class="btn btn-success me-2" onclick="Queue.completeNumber('${data.number}')">
+                完成
+            </button>
+            <button class="btn btn-warning me-2" onclick="Queue.passNumber('${data.number}')">
+                过号
+            </button>
+            <button class="btn btn-danger" onclick="Queue.cancelNumber('${data.number}')">
+                取消
+            </button>
+        `);
+                            // 添加高亮样式
+                            if (data.call_count >= 2) {
+                                $targetItem.addClass('high-priority');
+                            }
+                        }
+                        break;
+                }
+            }
+        }
+    );
+</script>
+</body>
+</html>

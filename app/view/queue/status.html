@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>排队状态查询</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <!-- Bootstrap CSS -->
+    <link href="/asset/bootstrap/5.3.0/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            background: #f8f9fa;
+            min-height: 100vh;
+            padding: 2rem 0;
+        }
+
+        .status-container {
+            max-width: 500px;
+            margin: 0 auto;
+        }
+
+        .status-card {
+            transition: all 0.3s ease;
+            animation: fadeIn 0.5s ease;
+        }
+
+        .status-info {
+            font-size: 1.1rem;
+        }
+
+        .status-label {
+            color: #6c757d;
+            font-weight: 500;
+        }
+
+        .status-value {
+            font-weight: 600;
+        }
+
+        .status-badge {
+            font-size: 1rem;
+            padding: 0.5rem 1rem;
+        }
+
+        /* 状态样式 */
+        .status-waiting {
+            border-left: 4px solid var(--bs-warning);
+        }
+
+        .status-processing {
+            border-left: 4px solid var(--bs-success);
+        }
+
+        .status-passed {
+            border-left: 4px solid var(--bs-danger);
+        }
+
+        .status-completed {
+            border-left: 4px solid var(--bs-info);
+        }
+
+        .status-cancelled {
+            border-left: 4px solid var(--bs-secondary);
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .refresh-btn {
+            transition: all 0.3s ease;
+        }
+
+        .refresh-btn:hover {
+            transform: scale(1.05);
+        }
+
+        .refresh-btn:active {
+            transform: scale(0.95);
+        }
+    </style>
+</head>
+<body>
+<div class="container status-container">
+    <div class="text-center mb-4">
+        <h2>排队状态查询</h2>
+        <p class="text-muted">实时查看您的排队进度</p>
+    </div>
+
+    <?php if ($queue): ?>
+    <div class="card shadow-sm status-card status-<?= strtolower($queue->getStatusText()) ?>">
+        <div class="card-body">
+            <!-- 状态标题 -->
+            <div class="text-center mb-4">
+                        <span class="badge status-badge bg-<?= $badgeClass ?>">
+                            <?= $queue->getStatusText() ?>
+                        </span>
+            </div>
+
+            <!-- 状态信息 -->
+            <div class="status-info">
+                <div class="row mb-3">
+                    <div class="col-4 status-label">排队号码</div>
+                    <div class="col-8 status-value"><?= $queue->number ?></div>
+                </div>
+
+                <?php if ($queue->window): ?>
+                <div class="row mb-3">
+                    <div class="col-4 status-label">窗口</div>
+                    <div class="col-8 status-value"><?= $queue->window->name ?></div>
+                </div>
+                <?php endif; ?>
+
+
+                <?php if ($queue->status == \app\model\QueueNumber::STATUS_WAITING ): ?>
+                <div class="row mb-3">
+                    <div class="col-4 status-label">前方等待人数</div>
+                    <div class="col-8 status-value"><?= $queue->waiting ?></div>
+                </div>
+                <?php endif; ?>
+
+
+                <?php if ($queue->call_count): ?>
+                <div class="row mb-3">
+                    <div class="col-4 status-label">叫号次数</div>
+                    <div class="col-8 status-value">
+                        <?= $queue->call_count ?>次
+                        <?php if ($queue->call_count >= 2): ?>
+                        <span class="badge bg-warning text-dark">多次叫号</span>
+                        <?php endif; ?>
+                    </div>
+                </div>
+                <?php endif; ?>
+
+                <div class="row">
+                    <div class="col-4 status-label">取号时间</div>
+                    <div class="col-8 status-value">
+                        <?= date('Y-m-d H:i:s', strtotime($queue->created_at)) ?>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <?php else: ?>
+    <div class="card shadow-sm">
+        <div class="card-body text-center">
+            <div class="text-muted">
+                <i class="bi bi-exclamation-circle fs-1"></i>
+                <p class="mt-3">号码不存在或已过期</p>
+            </div>
+        </div>
+    </div>
+    <?php endif; ?>
+
+
+    <button class="btn btn-primary w-100 mt-4 refresh-btn" id="renumbering">
+        <span class="spinner-border spinner-border-sm d-none"></span>
+        <span class="btn-text">重新取号</span>
+    </button>
+</div>
+
+<!-- Scripts -->
+<script src="/asset/js/jquery/3.7.0/jquery.min.js"></script>
+<script src="/asset/bootstrap/5.3.0/bootstrap.bundle.min.js"></script>
+
+<script>
+    //点击重新取号进行跳转
+    $('#renumbering').on('click', function () {
+        window.location.href = '/queue/take';
+    });
+</script>
+
+</body>
+</html> 

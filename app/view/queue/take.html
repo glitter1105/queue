@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>排队取号</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <!-- Bootstrap CSS -->
+    <link href="/asset/bootstrap/5.3.0/bootstrap.min.css" rel="stylesheet">
+    <!-- Toastr CSS -->
+    <link href="/asset/toastr/2.1.3/toastr.min.css" rel="stylesheet">
+    <style>
+        body {
+            background: #f8f9fa;
+            min-height: 100vh;
+        }
+
+        .take-number-container {
+            max-width: 500px;
+            margin: 2rem auto;
+        }
+
+        .current-info {
+            animation: fadeIn 0.5s ease;
+        }
+
+        .qrcode-container img {
+            max-width: 200px;
+            transition: transform 0.3s ease;
+        }
+
+        .qrcode-container img:hover {
+            transform: scale(1.05);
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+    </style>
+</head>
+<body>
+<div class="container take-number-container">
+    <!-- 取号表单卡片 -->
+    <div class="card shadow-sm mb-4">
+        <div class="card-header bg-primary text-white">
+            <h4 class="mb-0">排队取号</h4>
+        </div>
+        <div class="card-body">
+            <form id="takeNumberForm" class="needs-validation" novalidate>
+                <div class="mb-3">
+                    <label for="name" class="form-label">姓名</label>
+                    <input type="text"
+                           class="form-control"
+                           id="name"
+                           placeholder="请输入姓名"
+                           maxlength="50"
+                           required>
+                    <div class="invalid-feedback">
+                        请输入姓名
+                    </div>
+                </div>
+
+                <div class="mb-4">
+                    <label for="mobile" class="form-label">手机号</label>
+                    <input type="tel"
+                           class="form-control"
+                           id="mobile"
+                           placeholder="请输入手机号"
+                           maxlength="11"
+                           pattern="^1[3-9]\d{9}$"
+                           required>
+                    <div class="invalid-feedback">
+                        请输入正确的手机号
+                    </div>
+                </div>
+
+                <button type="submit" class="btn btn-primary w-100" id="submitBtn">
+                    <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+                    取号
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- 取号结果卡片 -->
+    <div id="resultCard" class="card shadow-sm mb-4 d-none">
+        <div class="card-body">
+            <div id="resultContent" class="text-center"></div>
+            <div id="qrcode" class="qrcode-container text-center mt-3"></div>
+        </div>
+    </div>
+
+    <!-- 当前叫号信息卡片 -->
+    <div class="card shadow-sm">
+        <div class="card-header bg-info text-white">
+            <h5 class="mb-0">当前叫号</h5>
+        </div>
+        <div class="card-body">
+            <div id="currentNumber" class="current-info text-center">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Scripts -->
+<script src="/asset/js/jquery/3.7.0/jquery.min.js"></script>
+<script src="/asset/bootstrap/5.3.0/bootstrap.bundle.min.js"></script>
+<script src="/asset/toastr/2.1.3/toastr.min.js"></script>
+<script>
+    const QueueSystem = {
+        init() {
+            this.initToastr();
+            this.bindEvents();
+            this.startCurrentNumberPolling();
+        },
+
+        initToastr() {
+            toastr.options = {
+                closeButton: true,
+                progressBar: true,
+                positionClass: "toast-top-center",
+            };
+        },
+
+        bindEvents() {
+            $('#takeNumberForm').on('submit', (e) => {
+                e.preventDefault();
+                this.takeNumber();
+            });
+        },
+
+        async takeNumber() {
+            const form = $('#takeNumberForm')[0];
+            if (!form.checkValidity()) {
+                form.classList.add('was-validated');
+                return;
+            }
+
+            const name = $('#name').val().trim();
+            const mobile = $('#mobile').val().trim();
+
+            this.setSubmitButtonLoading(true);
+
+            try {
+                const response = await this.apiRequest('/queue/take', {
+                    name: name,
+                    mobile: mobile
+                });
+
+                this.showResult(response.data);
+                // 清空表单
+                form.reset();
+                form.classList.remove('was-validated');
+                //去除url中的参数
+                history.pushState({}, '', location.pathname);
+            } catch (error) {
+                toastr.error(error.message);
+            } finally {
+                this.setSubmitButtonLoading(false);
+            }
+        },
+
+        async getCurrentNumber() {
+            try {
+                const response = await this.apiRequest('/queue/current', {}, 'GET');
+                this.updateCurrentNumber(response.data);
+            } catch (error) {
+                console.error('获取当前号码失败:', error);
+            }
+        },
+
+        startCurrentNumberPolling() {
+            this.getCurrentNumber();
+            setInterval(() => this.getCurrentNumber(), 30000);
+        },
+
+        updateCurrentNumber(info) {
+            const $container = $('#currentNumber');
+
+            if (!info) {
+                $container.html('<p class="text-muted mb-0">暂无叫号</p>');
+                return;
+            }
+
+            $container.html(`
+                <div class="alert alert-info mb-0">
+                    <h4 class="alert-heading mb-2">正在叫号</h4>
+                    <p class="mb-1">号码：${info.number}</p>
+                    <p class="mb-1">姓名：${info.name}</p>
+                    <p class="mb-0">窗口：${info.window}</p>
+                </div>
+            `);
+        },
+
+        showResult(data) {
+            const $resultCard = $('#resultCard');
+            const $resultContent = $('#resultContent');
+            const $qrcode = $('#qrcode');
+
+            let message = `
+                <div class="alert alert-success">
+                    <h4 class="alert-heading mb-2">取号成功!</h4>
+                    <p class="mb-1">您的号码是：<strong>${data.number}</strong></p>
+                    <p class="mb-1">前面还有 <strong>${data.waiting_count}</strong> 人在等待</p>
+                    ${data.cancelled_number ?
+                `<p class="mb-0 text-warning">注意：您之前的号码 ${data.cancelled_number} 已作废</p>` :
+                ''}
+                </div>
+            `;
+
+            $resultContent.html(message);
+
+            $qrcode.html(`
+                <p class="text-muted">扫描二维码查看排队状态</p>
+                <img src="/queue/qrcode?url=${encodeURIComponent(location.origin + data.qrcode_url)}" 
+                     alt="二维码" 
+                     class="img-fluid rounded shadow-sm">
+            `);
+
+            $resultCard.removeClass('d-none');
+        },
+
+        setSubmitButtonLoading(isLoading) {
+            const $btn = $('#submitBtn');
+            const $spinner = $btn.find('.spinner-border');
+
+            $btn.prop('disabled', isLoading);
+            isLoading ? $spinner.removeClass('d-none') : $spinner.addClass('d-none');
+            $btn.text(isLoading ? ' 处理中...' : '取号');
+        },
+
+        async apiRequest(url, data, method = 'POST') {
+            const options = {
+                method: method,
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            };
+
+            if (method === 'POST') {
+                options.body = JSON.stringify(data);
+            }
+
+            const response = await fetch(url, options);
+            const result = await response.json();
+
+            if (result.code !== 0) {
+                throw new Error(result.msg);
+            }
+
+            return result;
+        }
+    };
+
+    $(document).ready(() => QueueSystem.init());
+</script>
+</body>
+</html> 
